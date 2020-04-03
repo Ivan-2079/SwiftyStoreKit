@@ -77,7 +77,8 @@ class PaymentsController: TransactionController {
         
         let transactionState = transaction.transactionState
         
-        if transactionState == .purchased {
+        switch transactionState {
+        case .purchased:
             let purchase = PurchaseDetails(productId: transactionProductIdentifier, quantity: transaction.payment.quantity, product: payment.product, transaction: transaction, originalTransaction: transaction.original, needsFinishTransaction: !payment.atomically)
             
             payment.callback(.purchased(purchase: purchase))
@@ -87,17 +88,15 @@ class PaymentsController: TransactionController {
             }
             payments.remove(at: paymentIndex)
             return true
-        }
-        if transactionState == .failed {
             
+        case .failed:
             payment.callback(.failed(error: transactionError(for: transaction.error as NSError?)))
             
             paymentQueue.finishTransaction(transaction)
             payments.remove(at: paymentIndex)
             return true
-        }
-        
-        if transactionState == .restored {
+            
+        case .restored:
             print("Unexpected restored transaction for payment \(transactionProductIdentifier)")
             
             let purchase = PurchaseDetails(productId: transactionProductIdentifier, quantity: transaction.payment.quantity, product: payment.product, transaction: transaction, originalTransaction: transaction.original, needsFinishTransaction: !payment.atomically)
@@ -109,8 +108,20 @@ class PaymentsController: TransactionController {
             }
             payments.remove(at: paymentIndex)
             return true
+            
+        case .deferred:
+            payment.callback(.failed(error: SKError(SKError.unknown, userInfo: [ NSLocalizedDescriptionKey: "The transaction is in the queue, but its final status is pending external action." ])))
+            return false
+            
+        case .purchasing:
+            payment.callback(.failed(error: SKError(SKError.unknown, userInfo: [ NSLocalizedDescriptionKey: "Transaction is being added to the server queue." ])))
+            return false
+            
+        @unknown default:
+            payment.callback(.failed(error: SKError(SKError.unknown, userInfo: [ NSLocalizedDescriptionKey: "Unknown error" ])))
+            return false
         }
-        return false
+        
     }
     
     func transactionError(for error: NSError?) -> SKError {
