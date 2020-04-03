@@ -32,7 +32,7 @@ struct Payment: Hashable {
     let applicationUsername: String
     let simulatesAskToBuyInSandbox: Bool
     let callback: (TransactionResult) -> Void
-
+    
     func hash(into hasher: inout Hasher) {
         hasher.combine(product)
         hasher.combine(quantity)
@@ -47,41 +47,41 @@ struct Payment: Hashable {
 }
 
 class PaymentsController: TransactionController {
-
+    
     private var payments: [Payment] = []
-
+    
     private func findPaymentIndex(withProductIdentifier identifier: String) -> Int? {
         for payment in payments where payment.product.productIdentifier == identifier {
             return payments.firstIndex(of: payment)
         }
         return nil
     }
-
+    
     func hasPayment(_ payment: Payment) -> Bool {
         return findPaymentIndex(withProductIdentifier: payment.product.productIdentifier) != nil
     }
-
+    
     func append(_ payment: Payment) {
         payments.append(payment)
     }
-
+    
     func processTransaction(_ transaction: SKPaymentTransaction, on paymentQueue: PaymentQueue) -> Bool {
-
+        
         let transactionProductIdentifier = transaction.payment.productIdentifier
-
+        
         guard let paymentIndex = findPaymentIndex(withProductIdentifier: transactionProductIdentifier) else {
-
+            
             return false
         }
         let payment = payments[paymentIndex]
-
+        
         let transactionState = transaction.transactionState
-
+        
         if transactionState == .purchased {
             let purchase = PurchaseDetails(productId: transactionProductIdentifier, quantity: transaction.payment.quantity, product: payment.product, transaction: transaction, originalTransaction: transaction.original, needsFinishTransaction: !payment.atomically)
             
             payment.callback(.purchased(purchase: purchase))
-
+            
             if payment.atomically {
                 paymentQueue.finishTransaction(transaction)
             }
@@ -89,29 +89,39 @@ class PaymentsController: TransactionController {
             return true
         }
         if transactionState == .failed {
-
+            
             payment.callback(.failed(error: transactionError(for: transaction.error as NSError?)))
-
+            
             paymentQueue.finishTransaction(transaction)
             payments.remove(at: paymentIndex)
             return true
         }
-
+        
         if transactionState == .restored {
             print("Unexpected restored transaction for payment \(transactionProductIdentifier)")
+            
+            let purchase = PurchaseDetails(productId: transactionProductIdentifier, quantity: transaction.payment.quantity, product: payment.product, transaction: transaction, originalTransaction: transaction.original, needsFinishTransaction: !payment.atomically)
+            
+            payment.callback(.purchased(purchase: purchase))
+            
+            if payment.atomically {
+                paymentQueue.finishTransaction(transaction)
+            }
+            payments.remove(at: paymentIndex)
+            return true
         }
         return false
     }
-
+    
     func transactionError(for error: NSError?) -> SKError {
         let message = "Unknown error"
         let altError = NSError(domain: SKErrorDomain, code: SKError.unknown.rawValue, userInfo: [ NSLocalizedDescriptionKey: message ])
         let nsError = error ?? altError
         return SKError(_nsError: nsError)
     }
-
+    
     func processTransactions(_ transactions: [SKPaymentTransaction], on paymentQueue: PaymentQueue) -> [SKPaymentTransaction] {
-
+        
         return transactions.filter { !processTransaction($0, on: paymentQueue) }
     }
 }
